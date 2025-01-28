@@ -1,0 +1,2 @@
+[ldapservers]
+ldap01  ansible_ssh_private_key_file=/home/elaverick/.ssh/ldap01    ansible_user=ldapadmin

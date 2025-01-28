@@ -1,0 +1,91 @@
+---
+- name: Setup LDAP Servers
+  hosts: ldapservers
+  vars_files:
+    - ./vars/variables.yaml
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        state: latest
+
+    - name: Install ldap packages
+      apt:
+        name:
+          - slapd
+          - ldap-utils
+          - debconf-utils
+        state: present
+
+    - name: Ensure slapd is running and enabled
+      service:
+        name: slapd
+        state: started
+        enabled: yes
+    
+    - name: Configure LDAP Admin password
+      ansible.builtin.debconf:
+        name: password1
+        question: slapd/password1
+        value: ldap_password
+        vtype: password
+      no_log: yes
+    
+    - name: Configure LDAP Admin password (2)
+      ansible.builtin.debconf:
+        name: password2
+        question: slapd/password2
+        value: ldap_password
+        vtype: password
+      no_log: yes
+    
+    - name: Move the old database
+      ansible.builtin.debconf:
+        name: move_old_database
+        question: slapd/move_old_database
+        value: true
+        vtype: boolean
+    
+    - name: Do not skip configuration
+      ansible.builtin.debconf:
+        name: no_configuration
+        question: slapd/no_configuration
+        value: false
+        vtype: boolean
+
+    - name: Do not purge the database
+      ansible.builtin.debconf:
+        name: purge_database
+        question: slapd/purge_database
+        value: true
+        vtype: boolean
+  
+    - name: Configure the organization
+      ansible.builtin.debconf:
+        name: Organization
+        question: shared/organization
+        value: domain
+        vtype: string
+
+    - name: Configure the Domain
+      ansible.builtin.debconf:
+        name: Domain
+        question: slapd/domain
+        value: "{{ domain + '.' + tld }}"
+        vtype: string
+    
+    - name: Make debconf changes active
+      ansible.builtin.command:
+        cmd: "dpkg-reconfigure slapd"
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Stage initial user and groups
+      ansible.builtin.template:
+        src: templates/add_content.j2
+        dest: /tmp/add_content.ldif
