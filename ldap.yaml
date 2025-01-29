@@ -20,6 +20,7 @@
           - slapd
           - ldap-utils
           - debconf-utils
+          - python3-ldap
         state: present
 
     - name: Ensure slapd is running and enabled
@@ -85,7 +86,55 @@
       environment:
         DEBIAN_FRONTEND: noninteractive
 
-    - name: Stage initial user and groups
-      ansible.builtin.template:
-        src: templates/add_content.j2
-        dest: /tmp/add_content.ldif
+    - name: Create Parent entry for People
+      community.general.ldap_entry:
+        dn: "ou=People,dc={{ domain }},dc={{ tld }}"
+        objectClass: organizationalUnit
+        server_uri: ldap://localhost
+        bind_dn: "cn=admin,dc={{ domain }},dc={{ tld }}"
+        bind_pw: ldap_password
+    
+    - name: Create Parent entry for Groups
+      community.general.ldap_entry:
+        dn: "ou=Groups,dc={{ domain }},dc={{ tld }}"
+        objectClass: organizationalUnit
+        server_uri: ldap://localhost
+        bind_dn: "cn=admin,dc={{ domain }},dc={{ tld }}"
+        bind_pw: ldap_password
+    
+    - name: Create Groups
+      community.general.ldap_entry:
+        dn: "cn={{ item.name }},ou=Groups,dc={{ domain }},dc={{ tld }}"
+        objectClass: posixGroup
+        attributes:
+          cn: item.name
+          gidNumber : "{{item.gidNumber | int }}"
+        server_uri: ldap://localhost
+        bind_dn: "cn=admin,dc={{ domain }},dc={{ tld }}"
+        bind_pw: ldap_password
+      loop: "{{ ldapGroups }}"
+    
+    - name: Create Users
+      community.general.ldap_entry:
+        dn: "uid={{ item.uid }},ou=People,dc={{ domain }},dc={{ tld }}"
+        objectClass:
+          - inetOrgPerson
+          - posixAccount
+          - shadowAccount
+        attributes:
+          uid: "{{ item.uid }}"
+          sn: "{{ item.surname }}"
+          givenName: "{{ item.firstname }}"
+          cn: "{{ item.firstname }} {{ item.surname }}"
+          uidNumber: "{{ uidNumber + index | int }}"
+          gidNumber: "{{ item.gidNumber | int }}"
+          userPassword: "{CRYPT}x"
+          gecos: "{{ item.firstname }} {{ item.surname }}"
+          loginShell: /bin/bash
+          homeDirectory: "/home/{{ item.uid }}"
+        server_uri: ldap://localhost
+        bind_dn: "cn=admin,dc={{ domain }},dc={{ tld }}"
+        bind_pw: ldap_password
+      loop: "{{ ldapUsers }}"
+      loop_control:
+        index_var: index

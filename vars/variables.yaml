@@ -2,7 +2,22 @@
 domain: laverick
 tld: local
 
-# Initial User
-uid: elaverick
-firstname: Edward
-surname: Laverick
+# User counter
+uidNumber: 10000
+
+# Groups
+ldapGroups:
+  - name: users
+    gidNumber: 5000
+
+# Users
+ldapUsers:
+  - uid: elaverick
+    firstname: Edward
+    surname: Laverick
+    gidNumber: 5000
+  - uid: tlaverick
+    firstname: Tom
+    surname: Laverick
+    gidNumber: 5000
+
