@@ -1,0 +1,109 @@
+---
+- name: Setup Root Certification Authority
+  hosts: ldapservers
+  vars_files:
+    - ./vars/variables.yaml
+    - ./vars/sensitiveVars.yaml
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        state: latest
+    
+    - name: Ensure the output directory exists
+      ansible.builtin.file:
+        path: "{{ rootCAPath }}"
+        state: directory
+        mode: '0755'
+    
+    - name: Generate a 4096-bit private key
+      community.crypto.openssl_privatekey:
+        path: "{{ rootCAPath }}/rootCA.key"
+        size: 4096
+        type: RSA
+        mode: '0600'
+
+    - name: Generate a CSR for the Root CA
+      community.crypto.openssl_csr:
+        path: "{{ rootCAPath }}/rootCA.csr"
+        privatekey_path: "{{ rootCAPath }}/rootCA.key"
+        common_name: "{{ domain + '.' + tld }}"
+        country_name: "{{ country }}"
+        organization_name: "{{ domain }}"
+        organizational_unit_name: "Security"
+        email_address: "{{ emailAddress }}"
+        mode: '0644'
+      
+    - name: Generate a self-signed root CA certificate
+      community.crypto.x509_certificate:
+        path: "{{ rootCAPath }}/rootCA.crt"
+        privatekey_path: "{{ rootCAPath }}/rootCA.key"
+        provider: selfsigned
+        selfsigned_not_after: "+365d"
+        selfsigned_not_before: "+0s"
+        csr_path: "{{ rootCAPath }}/rootCA.csr"
+        mode: '0644'
+    
+    - name: Add root CA certificate to trusted store
+      ansible.builtin.copy:
+        src: "{{ rootCAPath }}/rootCA.crt"
+        dest: /usr/local/share/ca-certificates/{{ domain }}_root_ca.crt
+        remote_src: yes
+        mode: '0644'
+
+    - name: Update trusted certificates
+      ansible.builtin.command: update-ca-certificates
+      changed_when: false
+
+    - name: Ensure the output directory exists
+      ansible.builtin.file:
+        path: /etc/ssl/ldap
+        state: directory
+        mode: '0755'
+
+    - name: Generate a private key for LDAPS
+      community.crypto.openssl_privatekey:
+        path: "{{ ldapsPath }}/ldap01.key"
+        size: 4096
+        type: RSA
+        mode: '0600'
+
+    - name: Generate a Certificate Signing Request (CSR) for LDAPS
+      community.crypto.openssl_csr:
+        path: "{{ ldapsPath }}/ldap01.csr"
+        privatekey_path: "{{ ldapsPath }}/ldap01.key"
+        common_name: "ldap01.{{ domain }}.{{ tld }}"
+        key_usage:
+          - digitalSignature
+          - keyEncipherment
+        extended_key_usage:
+          - serverAuth
+        mode: '0644'
+
+    - name: Sign the LDAPS certificate with the Root CA
+      community.crypto.x509_certificate:
+        path: "{{ ldapsPath }}/ldap01.crt"
+        csr_path: "{{ ldapsPath }}/ldap01.csr"
+        ownca_privatekey_path: "{{ rootCAPath }}/rootCA.key"
+        ownca_path: "{{ rootCAPath }}/rootCA.crt"
+        provider: ownca
+        ownca_not_after: "+365d"
+        ownca_not_before: "+0s"
+        mode: '0644'
+
+    - name: Fetch the Root CA public certificate to the local machine
+      ansible.builtin.fetch:
+        src: "{{ rootCAPath }}/rootCA.crt"
+        dest: "./certs/rootCA.crt"
+        flat: yes
+
+    - name: Fetch the LDAP private key to the local machine
+      ansible.builtin.fetch:
+        src: "{{ ldapsPath }}/ldap01.key"
+        dest: "./certs/ldap01.key"
+        flat: yes
